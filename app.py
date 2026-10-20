@@ -6,8 +6,8 @@ from mysql.connector import Error
 
 for attempt in range(10):
     try:
-        connection = app.connector.connect(
-            host="db",  # MySQL service name in Docker Compose
+        connection = mysql.connector.connect(
+            host=os.getenv("MYSQL_HOST", "127.0.0.1"),
             port=3306,
             user="root",
             password="example123",
@@ -18,10 +18,12 @@ for attempt in range(10):
             print("Connected to MySQL successfully!")
 
             cursor = connection.cursor()
-            cursor.execute("SELECT VERSION()")
+            cursor.execute("""SELECT customerNumber, customerName, contactLastName, contactFirstName, phone, addressLine1, addressLine2, city, state, postalCode, country, salesRepEmployeeNumber, creditLimit
+FROM classicmodels.customers
+LIMIT 1""")
 
             result = cursor.fetchone()
-            print("MySQL version:", result[0])
+            print("Customer number:", result[0])
             break
 
     except Error as e:
