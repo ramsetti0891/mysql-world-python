@@ -11,7 +11,7 @@ for attempt in range(10):
             port=3306,
             user="root",
             password="example123",
-            database="company"
+            database="classicmodels"
         )
 
         if connection.is_connected():
