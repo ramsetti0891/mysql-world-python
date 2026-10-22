@@ -1,10 +1,9 @@
-
 import os
 import time
 import mysql.connector
 from mysql.connector import Error
 
-for attempt in range(10):
+for attempt in range(5):
     try:
         connection = mysql.connector.connect(
             host=os.getenv("MYSQL_HOST", "127.0.0.1"),
