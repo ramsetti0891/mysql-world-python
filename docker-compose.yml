@@ -1,13 +1,18 @@
 services:
-  app:
+  web:
     image: python:3.12-slim
-    container_name: python-app
     working_dir: /app
     environment:
       MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: example123
+      MYSQL_DATABASE: classicmodels
     volumes:
       - ./app.py:/app/app.py
-    command: sh -c "pip install mysql-connector-python && python app.py"
+    command: sh -c "pip install fastapi uvicorn mysql-connector-python && uvicorn app:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000-8001:8000"
     depends_on:
       - db
 
@@ -19,3 +24,8 @@ services:
       MYSQL_DATABASE: classicmodels
     ports:
       - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data:

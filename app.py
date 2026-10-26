@@ -1,37 +1,70 @@
 import os
-import time
+
 import mysql.connector
+from fastapi import FastAPI, HTTPException, Query
 from mysql.connector import Error
 
-for attempt in range(5):
+
+app = FastAPI(title="Classic Models API", version="1.0.0")
+
+CUSTOMER_COLUMNS = (
+    "customerNumber, customerName, contactLastName, contactFirstName, phone, "
+    "addressLine1, addressLine2, city, state, postalCode, country, "
+    "salesRepEmployeeNumber, creditLimit"
+)
+
+
+def get_connection():
+    return mysql.connector.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", "example123"),
+        database=os.getenv("MYSQL_DATABASE", "classicmodels"),
+    )
+
+
+@app.get("/customers")
+def list_customers(limit: int = Query(default=100, ge=1, le=500)):
+    """Return customers from the classicmodels database."""
+    connection = None
+    cursor = None
     try:
-        connection = mysql.connector.connect(
-            host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-            port=3306,
-            user="root",
-            password="example123",
-            database="classicmodels"
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            f"SELECT {CUSTOMER_COLUMNS} FROM customers ORDER BY customerNumber LIMIT %s",
+            (limit,),
         )
-
-        if connection.is_connected():
-            print("Connected to MySQL successfully!")
-
-            cursor = connection.cursor()
-            cursor.execute("""SELECT customerNumber, customerName, contactLastName, contactFirstName, phone, addressLine1, addressLine2, city, state, postalCode, country, salesRepEmployeeNumber, creditLimit
-FROM classicmodels.customers
-LIMIT 1""")
-
-            result = cursor.fetchone()
-            print("Customer number:", result[0])
-            break
-
-    except Error as e:
-        if attempt == 9:
-            print("Connection failed:", e)
-        else:
-            print("Waiting for MySQL...")
-            time.sleep(3)
-
+        return cursor.fetchall()
+    except Error as error:
+        raise HTTPException(status_code=503, detail="Database unavailable") from error
     finally:
-        if "connection" in locals() and connection.is_connected():
+        if cursor is not None:
+            cursor.close()
+        if connection is not None and connection.is_connected():
+            connection.close()
+
+
+@app.get("/customers/first")
+def first_customer():
+    """Return the first customer, matching the original app query."""
+    connection = None
+    cursor = None
+    try:
+        connection = get_connection()
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            f"SELECT {CUSTOMER_COLUMNS} FROM customers ORDER BY customerNumber LIMIT 1"
+        )
+        customer = cursor.fetchone()
+        if customer is None:
+            raise HTTPException(status_code=404, detail="No customers found")
+        return customer
+    except Error as error:
+        raise HTTPException(status_code=503, detail="Database unavailable") from error
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None and connection.is_connected():
             connection.close()
