@@ -1,11 +1,17 @@
 import os
+from pathlib import Path
 
 import mysql.connector
 from fastapi import FastAPI, HTTPException, Query
 from mysql.connector import Error
 
 
-app = FastAPI(title="Classic Models API", version="1.0.0")
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+app = FastAPI(
+    title="Classic Models API",
+    version="1.0.0",
+    debug=APP_ENV == "development",
+)
 
 CUSTOMER_COLUMNS = (
     "customerNumber, customerName, contactLastName, contactFirstName, phone, "
@@ -15,13 +21,46 @@ CUSTOMER_COLUMNS = (
 
 
 def get_connection():
+    password_file = os.getenv("MYSQL_PASSWORD_FILE")
+    password = (
+        Path(password_file).read_text(encoding="utf-8").strip()
+        if password_file
+        else os.getenv("MYSQL_PASSWORD")
+    )
+    user = os.getenv("MYSQL_USER")
+    if not user or not password:
+        raise RuntimeError("MYSQL_USER and a database password must be configured")
     return mysql.connector.connect(
         host=os.getenv("MYSQL_HOST", "127.0.0.1"),
         port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "example123"),
+        user=user,
+        password=password,
         database=os.getenv("MYSQL_DATABASE", "classicmodels"),
     )
+
+
+@app.get("/health/live", include_in_schema=False)
+def liveness():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", include_in_schema=False)
+def readiness():
+    connection = None
+    cursor = None
+    try:
+        connection = get_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        return {"status": "ready"}
+    except Error as error:
+        raise HTTPException(status_code=503, detail="Database unavailable") from error
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None and connection.is_connected():
+            connection.close()
 
 
 @app.get("/customers")

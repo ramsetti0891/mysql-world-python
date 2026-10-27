@@ -1,56 +1,106 @@
 # mysql-world-python
 
-A small REST API for reading customers from the MySQL `classicmodels` database.
+A FastAPI read API for the MySQL `classicmodels` database. The Compose setup
+builds an immutable API image, runs API containers as a non-root user, checks
+database/API readiness, and places Nginx in front of scaled API replicas.
 
 ## Run with Docker Compose
 
-Create a self-signed certificate for local development before starting Compose:
+The project has `.env.dev`, `.env.test`, and `.env.prod` configuration files.
+They contain non-sensitive settings only; passwords remain in separate secret
+files, which are ignored by Git. Create a local development certificate and
+secrets if you have not already:
 
 ```sh
-mkdir -p certs
+mkdir -p certs secrets
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout certs/server.key -out certs/server.crt -days 365 \
   -subj "/CN=localhost" \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+openssl rand -hex 32 > secrets/mysql_root_password.txt
+openssl rand -hex 32 > secrets/mysql_app_password.txt
+chmod 600 certs/server.key secrets/*.txt
 ```
 
-Then start the API and database:
+For your existing development database volume, keep the current value in
+`secrets/mysql_root_password.txt`; do not replace it with a new random password
+unless you also rotate the database root password.
+
+For an existing MySQL data volume, `mysql_root_password.txt` must contain the
+current MySQL root password. MySQL only reads initialization settings on the
+first creation of its data directory. The API account init script also only
+runs for a new volume. For an existing volume, create the API user once by
+connecting as root and running the SQL below, substituting the contents of
+`secrets/mysql_app_password.txt` for `<APP_PASSWORD>`:
+
+```sql
+CREATE USER IF NOT EXISTS 'classicmodels_api'@'%' IDENTIFIED BY '<APP_PASSWORD>';
+ALTER USER 'classicmodels_api'@'%' IDENTIFIED BY '<APP_PASSWORD>';
+GRANT SELECT ON classicmodels.* TO 'classicmodels_api'@'%';
+```
+
+Build and start three API replicas:
 
 ```sh
-docker compose up -d --scale web=3
+docker compose --env-file .env.dev up -d --build --scale web=3
 ```
 
-Nginx listens on HTTPS port 443 and balances requests across the `web` replicas.
-Open `https://localhost/docs`. Port 80 redirects to HTTPS. The self-signed
-certificate is for development, so browsers will show a warning. For example,
-`curl -k https://localhost/customers?limit=5` skips certificate verification for
-a local check. Do not use `-k` with a public service.
+Open `https://localhost/docs`. Nginx terminates HTTPS and load balances API
+requests. The self-signed certificate is for local use, so browsers will show a
+warning. `curl -k https://localhost/customers?limit=5` can be used for a local
+check; do not disable certificate verification for a public service. Ports 80
+and 443 must be available. Scale later with, for example,
+`docker compose --env-file .env.dev up -d --scale web=5`.
 
-To change the replica count later, run `docker compose up -d --scale web=5` (or
-choose another count). The replicas are internal to the Compose network; clients
-connect through the single Nginx address.
+Each environment uses a separate Compose project name and database volume. The
+test and production profiles also use separate secret paths. Create their
+secrets before starting those environments:
 
-- `GET /customers` returns up to 100 customers. Set `?limit=25` to choose a limit (1–500).
-- `GET /customers/first` returns the first customer, matching the original query.
-- `GET /docs` opens the interactive API documentation over HTTPS.
+```sh
+openssl rand -hex 32 > secrets/test_mysql_root_password.txt
+openssl rand -hex 32 > secrets/test_mysql_app_password.txt
+openssl rand -hex 32 > secrets/prod_mysql_root_password.txt
+openssl rand -hex 32 > secrets/prod_mysql_app_password.txt
+chmod 600 secrets/*.txt
+```
 
-The API reads database connection settings from `MYSQL_HOST`, `MYSQL_PORT`,
-`MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_DATABASE`. Defaults are suitable for
-the provided Compose configuration. Nginx uses the certificate and key at
-`certs/server.crt` and `certs/server.key`.
+Start the isolated test environment with
+`docker compose --env-file .env.test up -d --build --scale web=1`. It creates an
+empty `classicmodels_test` database; load test fixtures before exercising the
+customer routes. The production profile is started with
+`docker compose --env-file .env.prod up -d --build --scale web=3`; place a
+trusted `server.crt` and `server.key` in the configured `certs-prod` directory
+and configure `nginx.conf` for the public hostname before exposing it.
 
-## Run locally
+The MySQL service is not published on the host. Use `docker compose exec db ...`
+for administration. The database image creates the `classicmodels` database,
+but does not seed its sample tables or rows; import your Classic Models SQL dump
+separately if they are not already present.
 
-Install the API dependencies and start the server:
+## Local development
+
+Create a virtual environment, install the pinned dependencies, and configure
+database credentials before starting the API:
 
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-SSL_CERTFILE=certs/server.crt SSL_KEYFILE=certs/server.key PORT=8443 python app.py
+set -a
+. ./.env.dev
+set +a
+MYSQL_HOST=127.0.0.1 MYSQL_PASSWORD_FILE=secrets/mysql_app_password.txt \
+  SSL_CERTFILE=certs/server.crt SSL_KEYFILE=certs/server.key PORT=8443 python app.py
 ```
 
-Set the `MYSQL_*` environment variables if MySQL is not available at the default
-local connection settings. For a public deployment, configure a certificate
-trusted by clients and valid for the hostname they use; the self-signed
-development certificate is not suitable for public HTTPS.
+This requires a MySQL server reachable from the host on port 3306. The API also
+serves `/customers`, `/customers/first`, `/health/live`, and `/health/ready`.
+Interactive API docs are at `/docs`.
+
+## Deployment notes
+
+This Compose configuration is intended for a single Docker host. For a public
+deployment, replace the local certificate with one trusted by clients and valid
+for the public hostname. Store secrets in the deployment platform's secret
+manager, pin container images by digest, and configure backups, monitoring, and
+network access for your environment.
