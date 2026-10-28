@@ -4,6 +4,15 @@ A FastAPI read API for the MySQL `classicmodels` database. The Compose setup
 builds an immutable API image, runs API containers as a non-root user, checks
 database/API readiness, and places Nginx in front of scaled API replicas.
 
+## Code organization
+
+- `mysql_world_api/main.py` creates the FastAPI application and includes routers.
+- `mysql_world_api/routes/` defines customer and health endpoints.
+- `mysql_world_api/repositories/` contains customer SQL queries.
+- `mysql_world_api/database.py` manages MySQL connections and cursors.
+- `mysql_world_api/config.py` reads application and database settings.
+- `app.py` remains a small launcher for `python app.py` compatibility.
+
 ## Run with Docker Compose
 
 The project has `.env.dev`, `.env.test`, and `.env.prod` configuration files.

@@ -24,8 +24,9 @@ RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels -r requ
     && rm -rf /wheels
 
 COPY --chown=app:app app.py container_entrypoint.py ./
+COPY --chown=app:app mysql_world_api ./mysql_world_api
 
 EXPOSE 8000
 
 ENTRYPOINT ["python", "/app/container_entrypoint.py"]
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+CMD ["uvicorn", "mysql_world_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
