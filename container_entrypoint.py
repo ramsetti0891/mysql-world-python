@@ -2,11 +2,9 @@ import os
 import sys
 from pathlib import Path
 
-
 APP_UID = 10001
 APP_GID = 10001
 RUNTIME_SECRET = Path("/run/app-secrets/mysql_app_password")
-
 
 def main():
     secret_source = os.getenv("MYSQL_PASSWORD_FILE")
